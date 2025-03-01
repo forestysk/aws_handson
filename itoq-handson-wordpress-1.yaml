@@ -1,0 +1,429 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: VPC, EC2, ELB, RDS for handson 
+# handson: https://catalog.us-east-1.prod.workshops.aws/workshops/47782ec0-8e8c-41e8-b873-9da91e822b36/ja-JP
+# refer: https://zenn.dev/soshimiyamoto/articles/2d835cf2c3fb5a
+
+# ------------------------------------------------------------#
+#  Metadata
+# ------------------------------------------------------------#
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: handson Configuration
+        Parameters:
+          - HandsonName
+      -
+        Label:
+          default: VPC Configuration
+        Parameters:
+          - VpcCidrBlock
+          - PublicSubnet1CidrBlock
+          - PublicSubnet2CidrBlock
+          - PrivateSubnet1CidrBlock
+          - PrivateSubnet2CidrBlock
+          - AvailabilityZone1
+          - AvailabilityZone2
+      -
+        Label:
+          default: EC2 Configuration
+        Parameters:
+          - MyIP
+          - EC2AMIId
+      -
+        Label:
+          default: RDS Configuration
+        Parameters:
+          - DatabaseName
+          - DatabaseMasterName
+          - DatabaseMasterPassword
+
+# ------------------------------------------------------------#
+#  Parameters
+# ------------------------------------------------------------#
+Parameters:
+  HandsonName:
+    Type: String
+    Default: handson-
+  VpcCidrBlock:
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1CidrBlock:
+    Type: String
+    Default: 10.0.0.0/24
+  PublicSubnet2CidrBlock:
+    Type: String
+    Default: 10.0.1.0/24
+  PrivateSubnet1CidrBlock:
+    Type: String
+    Default: 10.0.2.0/24
+  PrivateSubnet2CidrBlock:
+    Type: String
+    Default: 10.0.3.0/24
+  AvailabilityZone1:
+    Type: AWS::EC2::AvailabilityZone::Name
+  AvailabilityZone2:
+    Type: AWS::EC2::AvailabilityZone::Name
+  MyIP:
+    Type: String
+    Description: my global ip address with /32 ex) aaa.bbb.ccc.ddd/32
+  EC2AMIId:
+    Description: AMI ID
+    Type : AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    # Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64
+  DatabaseName:
+    Description: Database Name
+    Type : String
+    Default: wordpress
+  DatabaseMasterName:
+    Description: Database Master User Namee
+    Type : String
+    Default: admin
+  DatabaseMasterPassword:
+    Description: Database Master User Password
+    Type : String
+    NoEcho: true
+
+Resources:
+  # ------------------------------------------------------------#
+  #  VPC
+  # ------------------------------------------------------------#
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidrBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Ref HandsonName
+
+  # ------------------------------------------------------------#
+  #  Internet Gateway
+  # ------------------------------------------------------------#         
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${HandsonName}-igw
+  AttachGatewayToVPC:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # ------------------------------------------------------------#
+  #  Route Table to internet gateway
+  # ------------------------------------------------------------#
+  RouteTablePublicSubnet:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${HandsonName}-rtb-public
+  RoutePublic:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGatewayToVPC
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref RouteTablePublicSubnet
+
+  # ------------------------------------------------------------#
+  #  Public Sunbet 1
+  # ------------------------------------------------------------#
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PublicSubnet1CidrBlock
+      AvailabilityZone: !Ref AvailabilityZone1
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${HandsonName}-subnet-public-1a
+  RouteTableAssociationPublic1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref RouteTablePublicSubnet
+
+  # ------------------------------------------------------------#
+  #  Public Sunbet 2
+  # ------------------------------------------------------------#
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PublicSubnet2CidrBlock
+      AvailabilityZone: !Ref AvailabilityZone2
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${HandsonName}-subnet-public-1c
+  RouteTableAssociationPublic2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref RouteTablePublicSubnet 
+
+  # ------------------------------------------------------------#
+  #  Private Sunbet 1
+  # ------------------------------------------------------------#
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PrivateSubnet1CidrBlock
+      AvailabilityZone: !Ref AvailabilityZone1
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${HandsonName}-subnet-private-1a
+
+  # ------------------------------------------------------------#
+  #  Private Sunbet 2
+  # ------------------------------------------------------------#
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PrivateSubnet2CidrBlock
+      AvailabilityZone: !Ref AvailabilityZone2
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${HandsonName}-subnet-private-1c
+  # ------------------------------------------------------------#
+  #  Route Table private
+  # ------------------------------------------------------------#
+  RouteTablePrivate1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${HandsonName}-rtb-private1-1a
+  RouteTablePrivate2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${HandsonName}-rtb-private1-1c
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref RouteTablePrivate1
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref RouteTablePrivate2
+
+  # ------------------------------------------------------------#
+  #  ALB Security Group
+  # ------------------------------------------------------------#
+  SecurityGroupALB:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${HandsonName}-alb-sg
+      GroupDescription: !Sub ${HandsonName}-alb-sg
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # http
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref MyIP
+      Tags: 
+        - Key: itoq
+          Value: !Ref HandsonName
+        - Key: Name
+          Value: !Sub ${HandsonName}-alb-sg
+  # ------------------------------------------------------------#
+  #  ALB
+  # ------------------------------------------------------------#
+  ApplicationLoadBalancer:
+    Type : AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${HandsonName}-elb
+      Scheme: "internet-facing"
+      SecurityGroups:
+        - !Ref SecurityGroupALB
+      # At least two subnet is needed
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Tags: 
+        - Key: Name
+          Value: !Sub ${HandsonName}-elb
+  # ------------------------------------------------------------#
+  #  EC2 Security Group
+  # ------------------------------------------------------------#
+  SecurityGroupEC2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${HandsonName}-web-sg
+      GroupDescription: !Sub ${HandsonName}-web-sg
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref MyIP
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref SecurityGroupALB
+      Tags: 
+        - Key: Name
+          Value: !Sub ${HandsonName}-web-sg
+
+  # ------------------------------------------------------------#
+  #  EC2
+  # ------------------------------------------------------------#
+  WebServer: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      AvailabilityZone: !Ref AvailabilityZone1
+      BlockDeviceMappings: 
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+      ImageId: !Ref EC2AMIId
+      InstanceInitiatedShutdownBehavior: 'stop'
+      InstanceType: t2.micro
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: '0'
+          SubnetId: !Ref PublicSubnet1
+          GroupSet:
+            - !Ref SecurityGroupEC2
+      Tenancy: default
+      Tags: 
+        - Key: Name
+          Value: !Sub ${HandsonName}-webserver#1
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd wget php-fpm php-mysqli php-json php php-devel mariadb105
+          wget http://ja.wordpress.org/latest-ja.tar.gz -P /tmp/
+          tar zxvf /tmp/latest-ja.tar.gz -C /tmp
+          cp -r /tmp/wordpress/* /var/www/html/
+          chown apache:apache -R /var/www/html
+          systemctl enable httpd.service
+          systemctl start httpd.service
+          yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+          systemctl restart amazon-ssm-agent
+
+  # ------------------------------------------------------------#
+  #  Target Group 
+  # ------------------------------------------------------------#
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckPath: /wp-includes/images/blank.gif
+      HealthCheckEnabled: True
+      Name: !Sub ${HandsonName}-target
+      Port: 80
+      Protocol: HTTP
+      Targets:
+        - Id: !Ref WebServer
+          Port: 80
+      VpcId: !Ref VPC
+  
+  # ------------------------------------------------------------#
+  #  ALB Listner
+  # ------------------------------------------------------------#
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref ALBTargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # ------------------------------------------------------------#
+  #  Database Subnet Group
+  # ------------------------------------------------------------#
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: !Sub ${HandsonName}-db-subnet
+      DBSubnetGroupName: !Sub ${HandsonName}-db-subnet
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags: 
+        - Key: Name
+          Value: !Sub ${HandsonName}-db-subnet
+
+  # ------------------------------------------------------------#
+  #  RDS Security Group
+  # ------------------------------------------------------------#
+  SecurityGroupRDS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${HandsonName}-rds-sg
+      GroupDescription: Allow Request from WebServer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # http
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref SecurityGroupEC2
+      Tags: 
+        - Key: Name
+          Value: !Sub ${HandsonName}-rds-sg
+
+  # ------------------------------------------------------------#
+  #  RDS 
+  # ------------------------------------------------------------#
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties: 
+      AllocatedStorage: 20
+      AutoMinorVersionUpgrade: true
+      AvailabilityZone: !Ref AvailabilityZone1
+      BackupRetentionPeriod: 0
+      DBInstanceClass: db.t3.micro
+      DBInstanceIdentifier: !Sub ${HandsonName}-rds
+      DBName: !Ref DatabaseName
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      DeletionProtection: false
+      Engine: mysql
+      EngineVersion: 8.0.35
+      MasterUsername: !Ref DatabaseMasterName
+      MasterUserPassword: !Ref DatabaseMasterPassword
+      MaxAllocatedStorage: 1000
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageEncrypted: false
+      StorageType: gp2
+      VPCSecurityGroups: 
+        - !Ref SecurityGroupRDS
+
+# ------------------------------------------------------------#
+#  Outputs
+# ------------------------------------------------------------#
+Outputs:
+  # ------------------------------------------------------------#
+  #  ALB 
+  # ------------------------------------------------------------#
+  ALBDNSName:
+    Description: ALB DNS Name
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+  # ------------------------------------------------------------#
+  #  RDS 
+  # ------------------------------------------------------------#
+  RDSDBInstanceEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt Database.Endpoint.Address
