@@ -239,7 +239,7 @@ Resources:
           ToPort: 80
           CidrIp: !Ref MyIP
       Tags: 
-        - Key: itoq
+        - Key: HandsonName
           Value: !Ref HandsonName
         - Key: Name
           Value: !Sub ${HandsonName}-alb-sg
